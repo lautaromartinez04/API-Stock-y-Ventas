@@ -1,0 +1,5 @@
+# Ignorar la carpeta de videos
+/videos/
+
+# Ignorar la carpeta del entorno virtual
+venv/
