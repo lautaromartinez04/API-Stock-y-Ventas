@@ -1,19 +1,20 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Depends
 from fastapi.responses import JSONResponse
 from config.database import Session
 from models.clientes import Cliente as ClienteModel
 from schemas.cliente import Cliente, ClienteCreate
 from services.clientes import ClienteService
+from middlewares.jwt_bearer import JWTBearer
 
 clientes_router = APIRouter()
 
-@clientes_router.get("/clientes", response_model=list[Cliente], tags=["Clientes"])
+@clientes_router.get("/clientes", response_model=list[Cliente], tags=["Clientes"], dependencies=[Depends(JWTBearer())])
 def get_clientes():
     db = Session()
     result = ClienteService(db).get_all()
     return result
 
-@clientes_router.get("/clientes/{id}", response_model=Cliente, tags=["Clientes"])
+@clientes_router.get("/clientes/{id}", response_model=Cliente, tags=["Clientes"], dependencies=[Depends(JWTBearer())])
 def get_cliente(id: int):
     db = Session()
     result = ClienteService(db).get(id)
@@ -21,13 +22,13 @@ def get_cliente(id: int):
         return JSONResponse(status_code=404, content={"message": "No encontrado"})
     return result
 
-@clientes_router.post("/clientes", response_model=Cliente, tags=["Clientes"])
+@clientes_router.post("/clientes", response_model=Cliente, tags=["Clientes"], dependencies=[Depends(JWTBearer())])
 def create_cliente(cliente: ClienteCreate):
     db = Session()
     result = ClienteService(db).create(cliente)
     return result
 
-@clientes_router.put("/clientes/{id}", response_model=Cliente, tags=["Clientes"])
+@clientes_router.put("/clientes/{id}", response_model=Cliente, tags=["Clientes"], dependencies=[Depends(JWTBearer())])
 def update_cliente(id: int, cliente: ClienteCreate):
     db = Session()
     result = ClienteService(db).update(id, cliente)
@@ -35,7 +36,7 @@ def update_cliente(id: int, cliente: ClienteCreate):
         return JSONResponse(status_code=404, content={"message": "No encontrado"})
     return result
 
-@clientes_router.delete("/clientes/{id}", tags=["Clientes"])
+@clientes_router.delete("/clientes/{id}", tags=["Clientes"], dependencies=[Depends(JWTBearer())])
 def delete_cliente(id: int):
     db = Session()
     result = ClienteService(db).delete(id)

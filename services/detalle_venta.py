@@ -20,6 +20,10 @@ class DetalleVentaService:
         result = self.db.query(DetalleVentaModel).filter(DetalleVentaModel.id == id).first()
         return DetalleVenta.model_validate(result)
 
+    def get_by_venta_id(self, venta_id: int):
+        result = self.db.query(DetalleVentaModel).filter(DetalleVentaModel.venta_id == venta_id).all()
+        return [DetalleVenta.model_validate(d) for d in result]
+    
     def update(self, id: int, detalle: DetalleVentaCreate):
         result = self.db.query(DetalleVentaModel).filter(DetalleVentaModel.id == id).first()
         if not result:

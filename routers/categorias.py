@@ -1,19 +1,21 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Depends
 from fastapi.responses import JSONResponse
 from config.database import Session
 from models.categorias import Categoria as CategoriaModel
 from schemas.categoria import Categoria, CategoriaCreate
 from services.categorias import CategoriaService
+from middlewares.jwt_bearer import JWTBearer
+
 
 categorias_router = APIRouter()
 
-@categorias_router.get("/categorias", response_model=list[Categoria], tags=["Categorías"])
+@categorias_router.get("/categorias", response_model=list[Categoria], tags=["Categorías"], dependencies=[Depends(JWTBearer())])
 def get_categorias():
     db = Session()
     result = CategoriaService(db).get_all()
     return result
 
-@categorias_router.get("/categorias/{id}", response_model=Categoria, tags=["Categorías"])
+@categorias_router.get("/categorias/{id}", response_model=Categoria, tags=["Categorías"], dependencies=[Depends(JWTBearer())])
 def get_categoria(id: int):
     db = Session()
     result = CategoriaService(db).get(id)
@@ -21,13 +23,13 @@ def get_categoria(id: int):
         return JSONResponse(status_code=404, content={"message": "No encontrado"})
     return result
 
-@categorias_router.post("/categorias", response_model=Categoria, tags=["Categorías"])
+@categorias_router.post("/categorias", response_model=Categoria, tags=["Categorías"], dependencies=[Depends(JWTBearer())])
 def create_categoria(categoria: CategoriaCreate):
     db = Session()
     result = CategoriaService(db).create(categoria)
     return result
 
-@categorias_router.put("/categorias/{id}", response_model=Categoria, tags=["Categorías"])
+@categorias_router.put("/categorias/{id}", response_model=Categoria, tags=["Categorías"], dependencies=[Depends(JWTBearer())])
 def update_categoria(id: int, categoria: CategoriaCreate):
     db = Session()
     result = CategoriaService(db).update(id, categoria)
@@ -35,7 +37,7 @@ def update_categoria(id: int, categoria: CategoriaCreate):
         return JSONResponse(status_code=404, content={"message": "No encontrado"})
     return result
 
-@categorias_router.delete("/categorias/{id}", tags=["Categorías"])
+@categorias_router.delete("/categorias/{id}", tags=["Categorías"], dependencies=[Depends(JWTBearer())])
 def delete_categoria(id: int):
     db = Session()
     result = CategoriaService(db).delete(id)

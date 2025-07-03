@@ -44,20 +44,20 @@ def login(user: User):
     token: str = create_token(usuario.model_dump())
     return JSONResponse(status_code=200, content={'accesoOk': True, 'token': token, 'usuario': jsonable_encoder(usuario)})
 
-@usuarios_router.get('/usuarios', response_model=list[Usuarios], tags=['Usuarios'])
+@usuarios_router.get('/usuarios', response_model=list[Usuarios], tags=['Usuarios'], dependencies=[Depends(JWTBearer())])
 def get_usuarios():
     db = Session()
     result = UsuariosService(db).get_usuarios()
     return result
 
-@usuarios_router.post('/usuarios', tags=['Usuarios'], response_model=dict, status_code=201)
+@usuarios_router.post('/usuarios', tags=['Usuarios'], response_model=dict, status_code=201, dependencies=[Depends(JWTBearer())])
 def create_usuarios(usuario: Usuarios) -> dict:
     usuario.password = get_password_hash(usuario.password)
     db = Session()
     UsuariosService(db).create_usuarios(usuario)
     return JSONResponse(status_code=201, content={"message": "Se ha registrado el usuario"})
 
-@usuarios_router.put('/usuarios/{id}', tags=['Usuarios'], response_model=dict, status_code=200)
+@usuarios_router.put('/usuarios/{id}', tags=['Usuarios'], response_model=dict, status_code=200, dependencies=[Depends(JWTBearer())])
 def update_usuarios(id: int, usuario: Usuarios) -> dict:
     db = Session()
     result = UsuariosService(db).get_usuario(id)
@@ -68,7 +68,7 @@ def update_usuarios(id: int, usuario: Usuarios) -> dict:
     UsuariosService(db).update_usuarios(id, usuario)
     return JSONResponse(status_code=200, content={"message": "Se ha modificado el usuario"})
 
-@usuarios_router.delete('/usuarios/{id}', tags=['Usuarios'], response_model=dict, status_code=200)
+@usuarios_router.delete('/usuarios/{id}', tags=['Usuarios'], response_model=dict, status_code=200, dependencies=[Depends(JWTBearer())])
 def delete_usuarios(id: int) -> dict:
     db = Session()
     result: UsuarioModel = db.query(UsuarioModel).filter(UsuarioModel.id == id).first()

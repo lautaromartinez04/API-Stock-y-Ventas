@@ -11,11 +11,13 @@ from routers.categorias import categorias_router
 from routers.clientes import clientes_router
 from routers.ventas import ventas_router
 from routers.detalle_venta import detalle_ventas_router
+from routers.ws import ws_router
+
 
 app = FastAPI()
 app.title = "API de Ventas y Stock"
 app.version = "1.0.0"
-
+app.include_router(ws_router)
 app.add_middleware(ErrorHandler)
 
 # Configuración CORS
@@ -34,6 +36,7 @@ app.include_router(categorias_router)
 app.include_router(clientes_router)
 app.include_router(ventas_router)
 app.include_router(detalle_ventas_router)
+app.include_router(ws_router)
 
 # Crear tablas si no existen
 Base.metadata.create_all(bind=engine)
