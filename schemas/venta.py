@@ -1,8 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
-# Este lo vas a usar en la creación de la venta
 class DetalleVentaCreate(BaseModel):
     producto_id: int
     cantidad: int
@@ -10,18 +9,21 @@ class DetalleVentaCreate(BaseModel):
     subtotal: float
 
 class VentaBase(BaseModel):
-    total: float
     cliente_id: Optional[int]
     usuario_id: int
 
-# Este schema ahora incluye los detalles
 class VentaCreate(VentaBase):
     detalles: List[DetalleVentaCreate]
+    descuento: Optional[float] = Field(
+        0.0, ge=0, le=100, description="Porcentaje de descuento (0–100)"
+    )
 
-# Este se usa para devolver una venta con ID y fecha
 class Venta(VentaBase):
     id: int
     fecha: datetime
+    total_sin_descuento: float
+    descuento: float
+    total: float
 
     class Config:
         from_attributes = True

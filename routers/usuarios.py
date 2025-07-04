@@ -67,7 +67,7 @@ def get_usuarios():
     tags=['Usuarios'],
     response_model=Usuarios,
     status_code=201,
-    dependencies=[Depends(JWTBearer())]
+    #dependencies=[Depends(JWTBearer())]
 )
 def create_usuarios(usuario: Usuarios) -> Usuarios:
     # Hasheamos la contraseña

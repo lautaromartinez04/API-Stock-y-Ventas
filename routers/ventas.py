@@ -1,3 +1,5 @@
+# routers/ventas.py
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from fastapi.responses import JSONResponse
 from config.database import Session
@@ -35,6 +37,7 @@ def get_venta(id: int):
 @ventas_router.post(
     "/ventas",
     response_model=Venta,
+    status_code=status.HTTP_201_CREATED,
     tags=["Ventas"],
     dependencies=[Depends(JWTBearer())]
 )
@@ -46,12 +49,14 @@ def create_venta(
     try:
         result = VentaService(db).create(venta)
 
-        # notificar nueva venta
+        # Notificar nueva venta
         background_tasks.add_task(
             manager.broadcast,
             {
                 "event": "new_sale",
                 "venta_id": result.id,
+                "total_sin_descuento": result.total_sin_descuento,
+                "descuento": result.descuento,
                 "total": result.total,
                 "cliente_id": result.cliente_id,
                 "detalles": [d.dict() for d in venta.detalles]
@@ -59,7 +64,7 @@ def create_venta(
             "ventas"
         )
 
-        # notificar stock actualizado
+        # Notificar stock actualizado
         for d in venta.detalles:
             prod = db.query(ProductoModel).filter(ProductoModel.id == d.producto_id).first()
             background_tasks.add_task(
@@ -97,10 +102,31 @@ def update_venta(id: int, venta: VentaCreate):
 
 @ventas_router.delete(
     "/ventas/{id}",
+    status_code=status.HTTP_204_NO_CONTENT,
     tags=["Ventas"],
     dependencies=[Depends(JWTBearer())]
 )
 def delete_venta(id: int):
     db = Session()
     VentaService(db).delete(id)
-    return JSONResponse(status_code=200, content={"message": "Venta eliminada"})
+    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+
+@ventas_router.post(
+    "/ventas/{id}/confirmar",
+    response_model=Venta,
+    tags=["Ventas"],
+    dependencies=[Depends(JWTBearer())]
+)
+def confirmar_venta(id: int):
+    db = Session()
+    return VentaService(db).confirmar_venta(id)
+
+@ventas_router.post(
+    "/ventas/{id}/cancelar",
+    response_model=Venta,
+    tags=["Ventas"],
+    dependencies=[Depends(JWTBearer())]
+)
+def cancelar_venta(id: int):
+    db = Session()
+    return VentaService(db).cancelar_venta(id)

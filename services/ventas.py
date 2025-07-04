@@ -22,16 +22,27 @@ class VentaService:
 
     def create(self, payload: VentaCreate) -> Venta:
         try:
-            # 1. Crear la venta base
+            # 1) Total bruto
+            total_bruto = sum(d.subtotal for d in payload.detalles)
+            # 2) Validar porcentaje de descuento
+            pct = payload.descuento or 0.0
+            if pct < 0 or pct > 100:
+                raise HTTPException(status_code=400, detail="Descuento debe estar entre 0 y 100")
+            # 3) Calcular total neto
+            total_neto = total_bruto * (1 - pct / 100)
+
+            # 4) Crear cabecera de la venta
             venta = VentaModel(
-                cliente_id=payload.cliente_id,
-                usuario_id=payload.usuario_id,
-                total=payload.total
+                cliente_id          = payload.cliente_id,
+                usuario_id          = payload.usuario_id,
+                total_sin_descuento = total_bruto,
+                descuento           = pct,
+                total               = total_neto
             )
             self.db.add(venta)
-            self.db.flush()  # Obtiene venta.id antes de los detalles
+            self.db.flush()  # obtiene venta.id
 
-            # 2. Procesar cada detalle: validar existencia, stock y crear registro
+            # 5) Procesar detalles (validar stock y descontar)
             for d in payload.detalles:
                 producto = (
                     self.db.query(ProductoModel)
@@ -39,33 +50,24 @@ class VentaService:
                     .first()
                 )
                 if not producto:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Producto {d.producto_id} no existe"
-                    )
+                    raise HTTPException(status_code=404, detail=f"Producto {d.producto_id} no existe")
                 if producto.stock_actual < d.cantidad:
                     raise HTTPException(
                         status_code=400,
-                        detail=(
-                            f"Stock insuficiente para '{producto.nombre}', "
-                            f"disponible {producto.stock_actual}"
-                        )
+                        detail=f"Stock insuficiente para '{producto.nombre}', disponible {producto.stock_actual}"
                     )
-
-                # Descontar stock
                 producto.stock_actual -= d.cantidad
 
-                # Crear detalle de venta
                 detalle = DetalleVentaModel(
-                    venta_id=venta.id,
-                    producto_id=d.producto_id,
-                    cantidad=d.cantidad,
-                    precio_unitario=d.precio_unitario,
-                    subtotal=d.subtotal
+                    venta_id       = venta.id,
+                    producto_id    = d.producto_id,
+                    cantidad       = d.cantidad,
+                    precio_unitario= d.precio_unitario,
+                    subtotal       = d.subtotal
                 )
                 self.db.add(detalle)
 
-            # 3. Commit de toda la transacción
+            # 6) Commit y refresh
             self.db.commit()
             self.db.refresh(venta)
             return Venta.model_validate(venta)
@@ -82,9 +84,18 @@ class VentaService:
         if not venta:
             return None
 
-        # Solo actualizamos los campos de la venta (no los detalles)
-        update_data = payload.dict(exclude={"detalles"})
-        for field, value in update_data.items():
+        # Actualiza sólo cabecera; no tocamos detalles aquí
+        total_bruto = sum(d.subtotal for d in payload.detalles)
+        pct = payload.descuento or 0.0
+        total_neto = total_bruto * (1 - pct / 100)
+
+        for field, value in {
+            "cliente_id": payload.cliente_id,
+            "usuario_id": payload.usuario_id,
+            "total_sin_descuento": total_bruto,
+            "descuento": pct,
+            "total": total_neto
+        }.items():
             setattr(venta, field, value)
 
         self.db.commit()
