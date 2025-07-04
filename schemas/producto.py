@@ -15,6 +15,7 @@ class ProductoCreate(ProductoBase):
 
 class Producto(ProductoBase):
     id: int
+    image_url: Optional[str] = None  # ruta o URL de la imagen
 
     class Config:
         from_attributes = True

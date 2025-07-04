@@ -1,3 +1,4 @@
+
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, Boolean
 from config.database import Base
 
@@ -12,3 +13,5 @@ class Producto(Base):
     precio_unitario = Column(Float, nullable=False)
     categoria_id = Column(Integer, ForeignKey("categorias.id"))
     activo = Column(Boolean, default=True)
+    # Nuevo campo para almacenar la ruta/URL de la imagen
+    image_url = Column(String(255), nullable=True)
