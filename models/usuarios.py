@@ -8,3 +8,4 @@ class Usuarios(Base):
     id = Column(Integer, primary_key=True)
     username = Column(String(20), unique=True, nullable=False)  # Solo username
     password = Column(String(1000), nullable=False)  # Solo password
+    role = Column(String(20), nullable=False)

@@ -1,4 +1,3 @@
-# utils/connection_manager.py
 from fastapi import WebSocket
 from typing import List
 
@@ -22,3 +21,6 @@ class ConnectionManager:
         lst = self.active_stock if channel == "stock" else self.active_sales
         for ws in lst:
             await ws.send_json(message)
+
+# ¡Aquí creamos la instancia única!
+manager = ConnectionManager()

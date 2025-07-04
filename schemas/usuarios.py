@@ -5,15 +5,15 @@ class User(BaseModel):
     username: str
     password: str
 
-# Usuario básico solo con username y password
+# Datos comunes de usuario
 class UsuarioBase(BaseModel):
     id: int
-    username: str = Field(min_length=4, max_length=20)  # Solo username
+    username: str = Field(min_length=4, max_length=20)
+    role: str = Field(min_length=4, max_length=20)
 
     class Config:
         from_attributes = True
 
-# Usuario completo solo con username y password
+# Insertar o devolver usuario completo (incluye password y role)
 class Usuarios(UsuarioBase):
-    password: str = Field(min_length=4)  # Solo password
-    
+    password: str = Field(min_length=4)
