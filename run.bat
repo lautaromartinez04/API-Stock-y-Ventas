@@ -9,6 +9,6 @@ if errorlevel 1 (
 )
 
 echo Entorno virtual activado.
-
+uvicorn main:app --reload
 echo Proceso finalizado.
 pause
