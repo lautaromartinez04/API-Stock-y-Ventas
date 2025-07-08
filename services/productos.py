@@ -1,5 +1,3 @@
-# services/productos.py
-
 from fastapi import HTTPException
 from models.productos import Producto as ProductoModel
 from schemas.producto import ProductoCreate, Producto
@@ -48,4 +46,3 @@ class ProductoService:
         self.db.commit()
         self.db.refresh(prod)
         return prod
-

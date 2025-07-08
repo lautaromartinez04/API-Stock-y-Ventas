@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, status, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from config.database import Session
 from models.productos import Producto as ProductoModel
@@ -41,9 +41,40 @@ def get_producto(id: int):
     tags=["Productos"],
     dependencies=[Depends(JWTBearer())]
 )
-def create_producto(producto: ProductoCreate):
+async def create_producto(
+    nombre: str = Form(...),
+    codigo: str = Form(...),
+    descripcion: str = Form(""),
+    stock_actual: int = Form(0),
+    precio_unitario: float = Form(...),
+    categoria_id: int = Form(1),
+    activo: bool = Form(True),
+    file: UploadFile = File(None)
+):
     db = Session()
-    return ProductoService(db).create(producto)
+    service = ProductoService(db)
+
+    image_url = None
+    if file:
+        if file.content_type not in ("image/jpeg", "image/png"):
+            raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
+        filename = f"{codigo}_{Path(file.filename).name}"
+        filepath = UPLOAD_DIR / filename
+        with filepath.open("wb") as f:
+            f.write(await file.read())
+        image_url = f"/uploads/{filename}"
+
+    nuevo = ProductoCreate(
+        nombre=nombre,
+        codigo=codigo,
+        descripcion=descripcion,
+        stock_actual=stock_actual,
+        precio_unitario=precio_unitario,
+        categoria_id=categoria_id,
+        activo=activo,
+        image_url=image_url
+    )
+    return service.create(nuevo)
 
 @productos_router.put(
     "/productos/{id}",
@@ -78,24 +109,20 @@ async def upload_image(
     id: int,
     file: UploadFile = File(...)
 ):
-    # Validar producto
     db = Session()
     service = ProductoService(db)
     prod = service.get(id)
     if not prod:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-    # Validar tipo
     if file.content_type not in ("image/jpeg", "image/png"):
         raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
 
-    # Guardar en /uploads
     filename = f"{id}_{Path(file.filename).name}"
     filepath = UPLOAD_DIR / filename
     with filepath.open("wb") as f:
         f.write(await file.read())
 
-    # Actualizar URL en BD
     image_url = f"/uploads/{filename}"
     updated = service.set_image(id, image_url)
     return updated

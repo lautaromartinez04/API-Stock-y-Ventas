@@ -11,7 +11,7 @@ class ProductoBase(BaseModel):
     activo: Optional[bool] = True
 
 class ProductoCreate(ProductoBase):
-    pass
+    image_url: Optional[str] = None  # Ahora acepta imagen opcional
 
 class Producto(ProductoBase):
     id: int
