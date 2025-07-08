@@ -109,3 +109,21 @@ def update_venta(
 def delete_venta(id: int, db: Session = Depends(get_db)):
     VentaService(db).delete(id)
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+
+@ventas_router.post(
+    "/ventas/{id}/confirmar",
+    response_model=Venta,
+    tags=["Ventas"],
+    dependencies=[Depends(JWTBearer())]
+)
+def confirmar_venta(id: int, db: Session = Depends(get_db)):
+    return VentaService(db).confirmar_venta(id)
+
+@ventas_router.post(
+    "/ventas/{id}/cancelar",
+    response_model=Venta,
+    tags=["Ventas"],
+    dependencies=[Depends(JWTBearer())]
+)
+def cancelar_venta(id: int, db: Session = Depends(get_db)):
+    return VentaService(db).cancelar_venta(id)
