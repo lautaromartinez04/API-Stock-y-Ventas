@@ -1,128 +1,107 @@
-from fastapi import APIRouter, status, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, Path, HTTPException, status
 from fastapi.responses import JSONResponse
-from config.database import Session
-from models.productos import Producto as ProductoModel
-from schemas.producto import Producto, ProductoCreate
-from services.productos import ProductoService
+from sqlalchemy.orm import Session
+from config.database import get_db
+from models.usuarios import Usuarios as UsuarioModel
+from fastapi.encoders import jsonable_encoder
 from middlewares.jwt_bearer import JWTBearer
-from pathlib import Path
+from services.usuarios import UsuariosService
+from schemas.usuarios import Usuarios, User
+from passlib.context import CryptContext
+from utils.jwt_manager import create_token
+from typing import Optional
 
-productos_router = APIRouter()
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+usuarios_router = APIRouter()
 
-@productos_router.get(
-    "/productos",
-    response_model=list[Producto],
-    tags=["Productos"],
-    dependencies=[Depends(JWTBearer())]
-)
-def get_productos():
-    db = Session()
-    return ProductoService(db).get_all()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-@productos_router.get(
-    "/productos/{id}",
-    response_model=Producto,
-    tags=["Productos"],
-    dependencies=[Depends(JWTBearer())]
-)
-def get_producto(id: int):
-    db = Session()
-    prod = ProductoService(db).get(id)
-    if not prod:
-        raise HTTPException(status_code=404, detail="No encontrado")
-    return prod
+def authenticate_user(users: list, username: str, password: str) -> Optional[Usuarios]:
+    user = get_user(users, username)
+    if not user or not verify_password(password, user.password):
+        return False
+    return Usuarios.model_validate(user)
 
-@productos_router.post(
-    "/productos",
-    response_model=Producto,
-    status_code=201,
-    tags=["Productos"],
-    dependencies=[Depends(JWTBearer())]
-)
-async def create_producto(
-    nombre: str = Form(...),
-    codigo: str = Form(...),
-    descripcion: str = Form(""),
-    stock_actual: int = Form(0),
-    precio_unitario: float = Form(...),
-    categoria_id: int = Form(1),
-    activo: bool = Form(True),
-    file: UploadFile = File(None)
-):
-    db = Session()
-    service = ProductoService(db)
 
-    image_url = None
-    if file:
-        if file.content_type not in ("image/jpeg", "image/png"):
-            raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
-        filename = f"{codigo}_{Path(file.filename).name}"
-        filepath = UPLOAD_DIR / filename
-        with filepath.open("wb") as f:
-            f.write(await file.read())
-        image_url = f"/uploads/{filename}"
+def get_user(users: list, username: str) -> Optional[UsuarioModel]:
+    for item in users:
+        if item.username == username:
+            return item
+    return None
 
-    nuevo = ProductoCreate(
-        nombre=nombre,
-        codigo=codigo,
-        descripcion=descripcion,
-        stock_actual=stock_actual,
-        precio_unitario=precio_unitario,
-        categoria_id=categoria_id,
-        activo=activo,
-        image_url=image_url
+
+def verify_password(plain_password, hashed_password) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+@usuarios_router.post('/login', tags=['auth'], status_code=status.HTTP_200_OK)
+def login(user: User, db: Session = Depends(get_db)):
+    usuarios_db: list = UsuariosService(db).get_usuarios()
+    usuario = authenticate_user(usuarios_db, user.username, user.password)
+    if not usuario:
+        return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={'accesoOk': False, 'token': ''})
+
+    token: str = create_token(usuario.model_dump())
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            'accesoOk': True,
+            'token': token,
+            'usuario': jsonable_encoder(usuario)
+        }
     )
-    return service.create(nuevo)
 
-@productos_router.put(
-    "/productos/{id}",
-    response_model=Producto,
-    tags=["Productos"],
+@usuarios_router.get(
+    '/usuarios',
+    response_model=list[Usuarios],
+    tags=['Usuarios'],
     dependencies=[Depends(JWTBearer())]
 )
-def update_producto(id: int, producto: ProductoCreate):
-    db = Session()
-    updated = ProductoService(db).update(id, producto)
-    if not updated:
-        raise HTTPException(status_code=404, detail="No encontrado")
-    return updated
+def get_usuarios(db: Session = Depends(get_db)):
+    return UsuariosService(db).get_usuarios()
 
-@productos_router.delete(
-    "/productos/{id}",
-    tags=["Productos"],
+@usuarios_router.post(
+    '/usuarios',
+    tags=['Usuarios'],
+    response_model=Usuarios,
+    status_code=status.HTTP_201_CREATED
+)
+def create_usuarios(usuario: Usuarios, db: Session = Depends(get_db)) -> Usuarios:
+    usuario.password = get_password_hash(usuario.password)
+    return UsuariosService(db).create_usuarios(usuario)
+
+@usuarios_router.put(
+    '/usuarios/{id}',
+    tags=['Usuarios'],
+    response_model=Usuarios,
+    status_code=status.HTTP_200_OK,
     dependencies=[Depends(JWTBearer())]
 )
-def delete_producto(id: int):
-    db = Session()
-    ProductoService(db).delete(id)
-    return JSONResponse(status_code=200, content={"message": "Se ha eliminado el producto"})
+def update_usuarios(
+    id: int = Path(..., gt=0),
+    usuario: Usuarios = Depends(),
+    db: Session = Depends(get_db)
+) -> Usuarios:
+    existing = UsuariosService(db).get_usuario(id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    usuario.password = get_password_hash(usuario.password)
+    return UsuariosService(db).update_usuarios(id, usuario)
 
-@productos_router.post(
-    "/productos/{id}/imagen",
-    response_model=Producto,
-    tags=["Productos"],
+@usuarios_router.delete(
+    '/usuarios/{id}',
+    tags=['Usuarios'],
+    status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(JWTBearer())]
 )
-async def upload_image(
-    id: int,
-    file: UploadFile = File(...)
+def delete_usuarios(
+    id: int = Path(..., gt=0),
+    db: Session = Depends(get_db)
 ):
-    db = Session()
-    service = ProductoService(db)
-    prod = service.get(id)
-    if not prod:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-    if file.content_type not in ("image/jpeg", "image/png"):
-        raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
-
-    filename = f"{id}_{Path(file.filename).name}"
-    filepath = UPLOAD_DIR / filename
-    with filepath.open("wb") as f:
-        f.write(await file.read())
-
-    image_url = f"/uploads/{filename}"
-    updated = service.set_image(id, image_url)
-    return updated
+    existing: UsuarioModel = db.query(UsuarioModel).filter(UsuarioModel.id == id).first()
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    UsuariosService(db).delete_usuarios(id)
+    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)

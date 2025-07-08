@@ -1,8 +1,7 @@
-# routers/ventas.py
-
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from fastapi.responses import JSONResponse
-from config.database import Session
+from sqlalchemy.orm import Session
+from config.database import get_db
 from schemas.venta import Venta, VentaCreate
 from services.ventas import VentaService
 from middlewares.jwt_bearer import JWTBearer
@@ -17,8 +16,7 @@ ventas_router = APIRouter()
     tags=["Ventas"],
     dependencies=[Depends(JWTBearer())]
 )
-def get_ventas():
-    db = Session()
+def get_ventas(db: Session = Depends(get_db)):
     return VentaService(db).get_all()
 
 @ventas_router.get(
@@ -27,8 +25,7 @@ def get_ventas():
     tags=["Ventas"],
     dependencies=[Depends(JWTBearer())]
 )
-def get_venta(id: int):
-    db = Session()
+def get_venta(id: int, db: Session = Depends(get_db)):
     venta = VentaService(db).get(id)
     if not venta:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
@@ -43,9 +40,9 @@ def get_venta(id: int):
 )
 def create_venta(
     venta: VentaCreate,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
 ):
-    db = Session()
     try:
         result = VentaService(db).create(venta)
 
@@ -93,8 +90,11 @@ def create_venta(
     tags=["Ventas"],
     dependencies=[Depends(JWTBearer())]
 )
-def update_venta(id: int, venta: VentaCreate):
-    db = Session()
+def update_venta(
+    id: int,
+    venta: VentaCreate,
+    db: Session = Depends(get_db)
+):
     updated = VentaService(db).update(id, venta)
     if not updated:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
@@ -106,8 +106,7 @@ def update_venta(id: int, venta: VentaCreate):
     tags=["Ventas"],
     dependencies=[Depends(JWTBearer())]
 )
-def delete_venta(id: int):
-    db = Session()
+def delete_venta(id: int, db: Session = Depends(get_db)):
     VentaService(db).delete(id)
     return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
@@ -117,8 +116,7 @@ def delete_venta(id: int):
     tags=["Ventas"],
     dependencies=[Depends(JWTBearer())]
 )
-def confirmar_venta(id: int):
-    db = Session()
+def confirmar_venta(id: int, db: Session = Depends(get_db)):
     return VentaService(db).confirmar_venta(id)
 
 @ventas_router.post(
@@ -127,6 +125,5 @@ def confirmar_venta(id: int):
     tags=["Ventas"],
     dependencies=[Depends(JWTBearer())]
 )
-def cancelar_venta(id: int):
-    db = Session()
+def cancelar_venta(id: int, db: Session = Depends(get_db)):
     return VentaService(db).cancelar_venta(id)
