@@ -1,107 +1,154 @@
-from fastapi import APIRouter, Depends, Path, HTTPException, status
+from fastapi import APIRouter, status, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from config.database import get_db
-from models.usuarios import Usuarios as UsuarioModel
-from fastapi.encoders import jsonable_encoder
+from models.productos import Producto as ProductoModel
+from schemas.producto import Producto, ProductoCreate
+from services.productos import ProductoService
 from middlewares.jwt_bearer import JWTBearer
-from services.usuarios import UsuariosService
-from schemas.usuarios import Usuarios, User
-from passlib.context import CryptContext
-from utils.jwt_manager import create_token
-from typing import Optional
+from pathlib import Path
 
-usuarios_router = APIRouter()
+productos_router = APIRouter()
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def authenticate_user(users: list, username: str, password: str) -> Optional[Usuarios]:
-    user = get_user(users, username)
-    if not user or not verify_password(password, user.password):
-        return False
-    return Usuarios.model_validate(user)
-
-
-def get_user(users: list, username: str) -> Optional[UsuarioModel]:
-    for item in users:
-        if item.username == username:
-            return item
-    return None
-
-
-def verify_password(plain_password, hashed_password) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-@usuarios_router.post('/login', tags=['auth'], status_code=status.HTTP_200_OK)
-def login(user: User, db: Session = Depends(get_db)):
-    usuarios_db: list = UsuariosService(db).get_usuarios()
-    usuario = authenticate_user(usuarios_db, user.username, user.password)
-    if not usuario:
-        return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={'accesoOk': False, 'token': ''})
-
-    token: str = create_token(usuario.model_dump())
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={
-            'accesoOk': True,
-            'token': token,
-            'usuario': jsonable_encoder(usuario)
-        }
-    )
-
-@usuarios_router.get(
-    '/usuarios',
-    response_model=list[Usuarios],
-    tags=['Usuarios'],
+@productos_router.get(
+    "/productos",
+    response_model=list[Producto],
+    tags=["Productos"],
     dependencies=[Depends(JWTBearer())]
 )
-def get_usuarios(db: Session = Depends(get_db)):
-    return UsuariosService(db).get_usuarios()
+def get_productos(db: Session = Depends(get_db)):
+    return ProductoService(db).get_all()
 
-@usuarios_router.post(
-    '/usuarios',
-    tags=['Usuarios'],
-    response_model=Usuarios,
-    status_code=status.HTTP_201_CREATED
-)
-def create_usuarios(usuario: Usuarios, db: Session = Depends(get_db)) -> Usuarios:
-    usuario.password = get_password_hash(usuario.password)
-    return UsuariosService(db).create_usuarios(usuario)
-
-@usuarios_router.put(
-    '/usuarios/{id}',
-    tags=['Usuarios'],
-    response_model=Usuarios,
-    status_code=status.HTTP_200_OK,
+@productos_router.get(
+    "/productos/{id}",
+    response_model=Producto,
+    tags=["Productos"],
     dependencies=[Depends(JWTBearer())]
 )
-def update_usuarios(
-    id: int = Path(..., gt=0),
-    usuario: Usuarios = Depends(),
-    db: Session = Depends(get_db)
-) -> Usuarios:
-    existing = UsuariosService(db).get_usuario(id)
-    if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
-    usuario.password = get_password_hash(usuario.password)
-    return UsuariosService(db).update_usuarios(id, usuario)
+def get_producto(id: int, db: Session = Depends(get_db)):
+    prod = ProductoService(db).get(id)
+    if not prod:
+        raise HTTPException(status_code=404, detail="No encontrado")
+    return prod
 
-@usuarios_router.delete(
-    '/usuarios/{id}',
-    tags=['Usuarios'],
-    status_code=status.HTTP_204_NO_CONTENT,
+@productos_router.post(
+    "/productos",
+    response_model=Producto,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Productos"],
     dependencies=[Depends(JWTBearer())]
 )
-def delete_usuarios(
-    id: int = Path(..., gt=0),
-    db: Session = Depends(get_db)
+async def create_producto(
+    nombre: str = Form(...),
+    codigo: str = Form(...),
+    descripcion: str = Form(""),
+    stock_actual: int = Form(0),
+    precio_unitario: float = Form(...),
+    categoria_id: int = Form(1),
+    activo: bool = Form(True),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
 ):
-    existing: UsuarioModel = db.query(UsuarioModel).filter(UsuarioModel.id == id).first()
-    if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
-    UsuariosService(db).delete_usuarios(id)
-    return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+    service = ProductoService(db)
+    image_url = None
+    if file:
+        if file.content_type not in ("image/jpeg", "image/png"):
+            raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
+        filename = f"{codigo}_{Path(file.filename).name}"
+        filepath = UPLOAD_DIR / filename
+        with filepath.open("wb") as f:
+            f.write(await file.read())
+        image_url = f"/uploads/{filename}"
+
+    nuevo = ProductoCreate(
+        nombre=nombre,
+        codigo=codigo,
+        descripcion=descripcion,
+        stock_actual=stock_actual,
+        precio_unitario=precio_unitario,
+        categoria_id=categoria_id,
+        activo=activo,
+        image_url=image_url,
+    )
+    return service.create(nuevo)
+
+@productos_router.put(
+    "/productos/{id}",
+    response_model=Producto,
+    tags=["Productos"],
+    dependencies=[Depends(JWTBearer())]
+)
+async def update_producto(
+    id: int,
+    nombre: str = Form(None),
+    codigo: str = Form(None),
+    descripcion: str = Form(None),
+    stock_actual: int = Form(None),
+    precio_unitario: float = Form(None),
+    categoria_id: int = Form(None),
+    activo: bool = Form(None),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+):
+    service = ProductoService(db)
+    prod = service.get(id)
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    update_data = prod.model_dump()
+    if nombre is not None: update_data['nombre'] = nombre
+    if codigo is not None: update_data['codigo'] = codigo
+    if descripcion is not None: update_data['descripcion'] = descripcion
+    if stock_actual is not None: update_data['stock_actual'] = stock_actual
+    if precio_unitario is not None: update_data['precio_unitario'] = precio_unitario
+    if categoria_id is not None: update_data['categoria_id'] = categoria_id
+    if activo is not None: update_data['activo'] = activo
+
+    updated = service.update(id, ProductoCreate(**update_data))
+    if file:
+        if file.content_type not in ("image/jpeg", "image/png"):
+            raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
+        filename = f"{id}_{Path(file.filename).name}"
+        filepath = UPLOAD_DIR / filename
+        with filepath.open("wb") as f:
+            f.write(await file.read())
+        image_url = f"/uploads/{filename}"
+        updated = service.set_image(id, image_url)
+
+    return updated
+
+@productos_router.delete(
+    "/productos/{id}",
+    tags=["Productos"],
+    dependencies=[Depends(JWTBearer())]
+)
+def delete_producto(id: int, db: Session = Depends(get_db)):
+    ProductoService(db).delete(id)
+    return JSONResponse(status_code=200, content={"message": "Se ha eliminado el producto"})
+
+@productos_router.post(
+    "/productos/{id}/imagen",
+    response_model=Producto,
+    tags=["Productos"],
+    dependencies=[Depends(JWTBearer())]
+)
+async def upload_image(
+    id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    service = ProductoService(db)
+    prod = service.get(id)
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    if file.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
+
+    filename = f"{id}_{Path(file.filename).name}"
+    filepath = UPLOAD_DIR / filename
+    with filepath.open("wb") as f:
+        f.write(await file.read())
+    image_url = f"/uploads/{filename}"
+    return service.set_image(id, image_url)

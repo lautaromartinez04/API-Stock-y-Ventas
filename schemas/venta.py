@@ -25,5 +25,23 @@ class Venta(VentaBase):
     descuento: float
     total: float
 
-    class Config:
+class Config:
         from_attributes = True
+
+
+class DevolucionDetalle(BaseModel):
+    producto_id: int
+    cantidad: int = Field(..., gt=0)
+
+class DevolucionCreate(BaseModel):
+    venta_id: Optional[int] = None
+    detalles: List[DevolucionDetalle]
+
+class Devolucion(BaseModel):
+    id: int
+    venta_id: Optional[int]
+    fecha: datetime
+    detalles: List[DevolucionDetalle]
+
+    class Config:
+        orm_mode = True

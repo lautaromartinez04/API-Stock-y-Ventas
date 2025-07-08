@@ -1,13 +1,12 @@
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
-from config.database import Session
 from models.ventas import Venta as VentaModel
 from models.detalle_venta import DetalleVenta as DetalleVentaModel
 from models.productos import Producto as ProductoModel
 from schemas.venta import VentaCreate, Venta
 
 class VentaService:
-    def __init__(self, db: Session):
+    def __init__(self, db):
         self.db = db
 
     def get_all(self) -> list[Venta]:
@@ -15,7 +14,11 @@ class VentaService:
         return [Venta.model_validate(v) for v in ventas]
 
     def get(self, id: int) -> Venta | None:
-        v = self.db.query(VentaModel).filter(VentaModel.id == id).first()
+        v = (
+            self.db.query(VentaModel)
+            .filter(VentaModel.id == id)
+            .first()
+        )
         if not v:
             return None
         return Venta.model_validate(v)
@@ -59,11 +62,11 @@ class VentaService:
                 producto.stock_actual -= d.cantidad
 
                 detalle = DetalleVentaModel(
-                    venta_id       = venta.id,
-                    producto_id    = d.producto_id,
-                    cantidad       = d.cantidad,
-                    precio_unitario= d.precio_unitario,
-                    subtotal       = d.subtotal
+                    venta_id        = venta.id,
+                    producto_id     = d.producto_id,
+                    cantidad        = d.cantidad,
+                    precio_unitario = d.precio_unitario,
+                    subtotal        = d.subtotal
                 )
                 self.db.add(detalle)
 
@@ -80,7 +83,11 @@ class VentaService:
             raise HTTPException(status_code=500, detail="Error interno al crear la venta")
 
     def update(self, id: int, payload: VentaCreate) -> Venta | None:
-        venta = self.db.query(VentaModel).filter(VentaModel.id == id).first()
+        venta = (
+            self.db.query(VentaModel)
+            .filter(VentaModel.id == id)
+            .first()
+        )
         if not venta:
             return None
 
@@ -89,14 +96,11 @@ class VentaService:
         pct = payload.descuento or 0.0
         total_neto = total_bruto * (1 - pct / 100)
 
-        for field, value in {
-            "cliente_id": payload.cliente_id,
-            "usuario_id": payload.usuario_id,
-            "total_sin_descuento": total_bruto,
-            "descuento": pct,
-            "total": total_neto
-        }.items():
-            setattr(venta, field, value)
+        venta.cliente_id          = payload.cliente_id
+        venta.usuario_id          = payload.usuario_id
+        venta.total_sin_descuento = total_bruto
+        venta.descuento           = pct
+        venta.total               = total_neto
 
         self.db.commit()
         self.db.refresh(venta)

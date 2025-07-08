@@ -39,7 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Incluir routers (un único ws_router)
+# Incluir routers
 app.include_router(usuarios_router)
 app.include_router(productos_router)
 app.include_router(categorias_router)
@@ -53,4 +53,4 @@ Base.metadata.create_all(bind=engine)
 
 @app.get("/", tags=["home"])
 def message():
-    return HTMLResponse("<h1>API de Control de Ventas y Stock</h1>")
+    return HTMLResponse("<h1>API de Control de Ventas, Stock y Devoluciones</h1>")
