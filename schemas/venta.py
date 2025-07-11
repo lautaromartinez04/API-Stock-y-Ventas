@@ -7,6 +7,7 @@ class DetalleVentaCreate(BaseModel):
     cantidad: int
     precio_unitario: float
     subtotal: float
+    descuento_individual: float
 
 class VentaBase(BaseModel):
     cliente_id: Optional[int]

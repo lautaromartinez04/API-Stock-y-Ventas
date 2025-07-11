@@ -14,6 +14,9 @@ class DetalleDevolucionOut(BaseModel):
     id: int
     producto_id: int
     cantidad: int
+    precio_unitario: float
+    descuento_individual: float
+    subtotal: float
 
     class Config:
         orm_mode = True

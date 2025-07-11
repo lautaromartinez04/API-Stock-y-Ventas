@@ -1,3 +1,5 @@
+# services/devoluciones.py
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import models.devoluciones as devol_models
@@ -9,16 +11,17 @@ from schemas.devoluciones import DevolucionCreate
 
 def create_devolucion(db: Session, data: DevolucionCreate) -> devol_models.Devolucion:
     """
-    Crea una devolución y sus detalles asociados, valida límites,
-    y actualiza el stock_actual de los productos.
+    Crea una devolución y sus detalles asociados, y actualiza el stock_actual
+    de los productos. Respeta precio_unitario y descuento_individual de la venta.
     """
+    # 1) Verificar venta
     venta = db.query(ventas_models.Venta).filter(
         ventas_models.Venta.id == data.venta_id
     ).first()
     if not venta:
         raise ValueError("Venta no encontrada")
 
-    # Validar para cada ítem que no exceda lo vendido
+    # 2) Validar límite de devolución
     for item in data.items:
         sold_qty = db.query(func.coalesce(func.sum(dv_models.DetalleVenta.cantidad), 0)).filter(
             dv_models.DetalleVenta.venta_id == data.venta_id,
@@ -37,19 +40,41 @@ def create_devolucion(db: Session, data: DevolucionCreate) -> devol_models.Devol
                 f"solo quedan {disponible} disponibles"
             )
 
-    # Crear devolución
+    # 3) Crear cabecera
     nueva_dev = devol_models.Devolucion(venta_id=data.venta_id)
     db.add(nueva_dev)
     db.flush()
 
-    # Crear detalles y ajustar stock_actual
+    # 4) Crear detalles usando datos de la venta original
     for item in data.items:
+        # 4.1) Obtener detalle de venta original
+        orig = (
+            db.query(dv_models.DetalleVenta)
+            .filter(
+                dv_models.DetalleVenta.venta_id == data.venta_id,
+                dv_models.DetalleVenta.producto_id == item.producto_id
+            )
+            .first()
+        )
+        if not orig:
+            raise ValueError(f"Detalle de venta no encontrado para producto {item.producto_id}")
+
+        pu = orig.precio_unitario
+        di = getattr(orig, 'descuento_individual', 0.0)
+        # 4.2) Calcular subtotal de devolución con descuento_individual
+        sub = pu * item.cantidad * (1 - di/100)
+
         detalle = devol_models.DetalleDevolucion(
-            devolucion_id=nueva_dev.id,
-            producto_id=item.producto_id,
-            cantidad=item.cantidad
+            devolucion_id         = nueva_dev.id,
+            producto_id           = item.producto_id,
+            cantidad              = item.cantidad,
+            precio_unitario       = pu,
+            descuento_individual  = di,
+            subtotal              = sub
         )
         db.add(detalle)
+
+        # 4.3) Ajustar stock
         producto = db.query(productos_models.Producto).filter(
             productos_models.Producto.id == item.producto_id
         ).first()
@@ -58,10 +83,89 @@ def create_devolucion(db: Session, data: DevolucionCreate) -> devol_models.Devol
         producto.stock_actual = (producto.stock_actual or 0) + item.cantidad
         db.add(producto)
 
+    # 5) Guardar todo
     db.commit()
     db.refresh(nueva_dev)
     return nueva_dev
 
+
+def update_devolucion(db: Session, devolucion_id: int, data: DevolucionCreate) -> devol_models.Devolucion:
+    """
+    Actualiza una devolución, revierte stock antiguo, valida límites,
+    y crea nuevos detalles respetando precio y descuentos individuales.
+    """
+    devol = db.query(devol_models.Devolucion).filter(
+        devol_models.Devolucion.id == devolucion_id
+    ).first()
+    if not devol:
+        raise ValueError("Devolución no encontrada")
+
+    # 1) Revertir stock y borrar detalles previos
+    for detalle in devol.detalles:
+        prod = db.query(productos_models.Producto).filter(
+            productos_models.Producto.id == detalle.producto_id
+        ).first()
+        if prod:
+            prod.stock_actual = (prod.stock_actual or 0) - detalle.cantidad
+            db.add(prod)
+        db.delete(detalle)
+    db.flush()
+
+    # 2) Validar nuevo límite de devolución
+    for item in data.items:
+        sold_qty = db.query(func.coalesce(func.sum(dv_models.DetalleVenta.cantidad), 0)).filter(
+            dv_models.DetalleVenta.venta_id == devol.venta_id,
+            dv_models.DetalleVenta.producto_id == item.producto_id
+        ).scalar() or 0
+        returned_qty = db.query(func.coalesce(func.sum(devol_models.DetalleDevolucion.cantidad), 0)).join(
+            devol_models.Devolucion
+        ).filter(
+            devol_models.Devolucion.venta_id == devol.venta_id,
+            devol_models.DetalleDevolucion.producto_id == item.producto_id
+        ).scalar() or 0
+        if returned_qty + item.cantidad > sold_qty:
+            disp = sold_qty - returned_qty
+            raise ValueError(
+                f"No puedes devolver {item.cantidad} unidades del producto {item.producto_id}; "
+                f"solo quedan {disp} disponibles"
+            )
+
+    # 3) Crear nuevos detalles con precio y descuento
+    for item in data.items:
+        orig = (
+            db.query(dv_models.DetalleVenta)
+            .filter(
+                dv_models.DetalleVenta.venta_id == devol.venta_id,
+                dv_models.DetalleVenta.producto_id == item.producto_id
+            )
+            .first()
+        )
+        if not orig:
+            raise ValueError(f"Detalle de venta no encontrado para producto {item.producto_id}")
+
+        pu = orig.precio_unitario
+        di = getattr(orig, 'descuento_individual', 0.0)
+        sub = pu * item.cantidad * (1 - di/100)
+
+        nuevo_detalle = devol_models.DetalleDevolucion(
+            devolucion_id         = devol.id,
+            producto_id           = item.producto_id,
+            cantidad              = item.cantidad,
+            precio_unitario       = pu,
+            descuento_individual  = di,
+            subtotal              = sub
+        )
+        db.add(nuevo_detalle)
+
+        prod = db.query(productos_models.Producto).filter(
+            productos_models.Producto.id == item.producto_id
+        ).first()
+        prod.stock_actual = (prod.stock_actual or 0) + item.cantidad
+        db.add(prod)
+
+    db.commit()
+    db.refresh(devol)
+    return devol
 
 def get_all_devoluciones(db: Session) -> list[devol_models.Devolucion]:
     """
@@ -77,67 +181,7 @@ def get_devolucion_by_id(db: Session, devolucion_id: int) -> devol_models.Devolu
     return db.query(devol_models.Devolucion).filter(
         devol_models.Devolucion.id == devolucion_id
     ).first()
-
-
-def update_devolucion(db: Session, devolucion_id: int, data: DevolucionCreate) -> devol_models.Devolucion:
-    """
-    Actualiza una devolución, valida límites y ajusta el stock_actual.
-    """
-    devol = db.query(devol_models.Devolucion).filter(
-        devol_models.Devolucion.id == devolucion_id
-    ).first()
-    if not devol:
-        raise ValueError("Devolución no encontrada")
-
-    # Revertir stock_actual antiguo y eliminar detalles
-    for detalle in devol.detalles:
-        producto = db.query(productos_models.Producto).filter(
-            productos_models.Producto.id == detalle.producto_id
-        ).first()
-        if producto:
-            producto.stock_actual = (producto.stock_actual or 0) - detalle.cantidad
-            db.add(producto)
-        db.delete(detalle)
-    db.flush()
-
-    # Validar nuevos detalles
-    for item in data.items:
-        sold_qty = db.query(func.coalesce(func.sum(dv_models.DetalleVenta.cantidad), 0)).filter(
-            dv_models.DetalleVenta.venta_id == devol.venta_id,
-            dv_models.DetalleVenta.producto_id == item.producto_id
-        ).scalar() or 0
-        returned_qty = db.query(func.coalesce(func.sum(devol_models.DetalleDevolucion.cantidad), 0)).join(
-            devol_models.Devolucion
-        ).filter(
-            devol_models.Devolucion.venta_id == devol.venta_id,
-            devol_models.DetalleDevolucion.producto_id == item.producto_id
-        ).scalar() or 0
-        if returned_qty + item.cantidad > sold_qty:
-            disponible = sold_qty - returned_qty
-            raise ValueError(
-                f"No puedes devolver {item.cantidad} unidades del producto {item.producto_id}; "
-                f"solo quedan {disponible} disponibles"
-            )
-
-    # Crear nuevos detalles y ajustar stock_actual
-    for item in data.items:
-        nuevo_detalle = devol_models.DetalleDevolucion(
-            devolucion_id=devol.id,
-            producto_id=item.producto_id,
-            cantidad=item.cantidad
-        )
-        db.add(nuevo_detalle)
-        producto = db.query(productos_models.Producto).filter(
-            productos_models.Producto.id == item.producto_id
-        ).first()
-        producto.stock_actual = (producto.stock_actual or 0) + item.cantidad
-        db.add(producto)
-
-    db.commit()
-    db.refresh(devol)
-    return devol
-
-
+    
 def delete_devolucion(db: Session, devolucion_id: int) -> None:
     """
     Elimina una devolución y ajusta el stock_actual.

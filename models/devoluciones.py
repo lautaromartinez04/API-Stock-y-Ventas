@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, DateTime, func
+from sqlalchemy import Column, Integer, ForeignKey, DateTime, func, Float
 from sqlalchemy.orm import relationship
 from config.database import Base
 
@@ -18,5 +18,8 @@ class DetalleDevolucion(Base):
     devolucion_id = Column(Integer, ForeignKey("devoluciones.id"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=False)
     cantidad = Column(Integer, nullable=False)
+    precio_unitario = Column(Float, nullable=False)
+    descuento_individual = Column(Float, nullable=False)
+    subtotal = Column(Float, nullable=False)
 
     devolucion = relationship("Devolucion", back_populates="detalles")

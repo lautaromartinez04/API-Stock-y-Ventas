@@ -6,6 +6,7 @@ class DetalleVentaBase(BaseModel):
     cantidad: int
     precio_unitario: float
     subtotal: float
+    descuento_individual: float
 
 class DetalleVentaCreate(DetalleVentaBase):
     pass

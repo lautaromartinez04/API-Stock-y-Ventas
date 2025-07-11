@@ -23,54 +23,90 @@ class VentaService:
             return None
         return Venta.model_validate(v)
 
+    
     def create(self, payload: VentaCreate) -> Venta:
         try:
-            # 1) Total bruto
-            total_bruto = sum(d.subtotal for d in payload.detalles)
-            # 2) Validar porcentaje de descuento
-            pct = payload.descuento or 0.0
-            if pct < 0 or pct > 100:
-                raise HTTPException(status_code=400, detail="Descuento debe estar entre 0 y 100")
-            # 3) Calcular total neto
-            total_neto = total_bruto * (1 - pct / 100)
+            # 1) Calcular bruto (sin descuentos)
+            gross_total = sum(d.precio_unitario * d.cantidad for d in payload.detalles)
 
-            # 4) Crear cabecera de la venta
+            # 2) Validar y calcular después de descuentos individuales
+            net_after_individual = 0.0
+            for d in payload.detalles:
+                if not (0 <= d.descuento_individual <= 100):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Descuento individual debe estar entre 0 y 100"
+                    )
+                net_after_individual += (
+                    d.precio_unitario
+                    * d.cantidad
+                    * (1 - d.descuento_individual / 100)
+                )
+
+            # 3) Validar descuento global
+            pct_global = payload.descuento or 0.0
+            if not (0 <= pct_global <= 100):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Descuento global debe estar entre 0 y 100"
+                )
+
+            # 4) Calcular total neto final
+            total_neto = net_after_individual * (1 - pct_global / 100)
+
+            # 5) Crear cabecera de la venta
             venta = VentaModel(
                 cliente_id          = payload.cliente_id,
                 usuario_id          = payload.usuario_id,
-                total_sin_descuento = total_bruto,
-                descuento           = pct,
+                total_sin_descuento = gross_total,
+                descuento           = pct_global,
                 total               = total_neto
             )
             self.db.add(venta)
-            self.db.flush()  # obtiene venta.id
+            self.db.flush()  # para obtener venta.id
 
-            # 5) Procesar detalles (validar stock y descontar)
+            # 6) Procesar cada detalle: stock y registro
             for d in payload.detalles:
-                producto = (
+                prod = (
                     self.db.query(ProductoModel)
                     .filter(ProductoModel.id == d.producto_id)
                     .first()
                 )
-                if not producto:
-                    raise HTTPException(status_code=404, detail=f"Producto {d.producto_id} no existe")
-                if producto.stock_actual < d.cantidad:
+                if not prod:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Producto {d.producto_id} no existe"
+                    )
+                if prod.stock_actual < d.cantidad:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Stock insuficiente para '{producto.nombre}', disponible {producto.stock_actual}"
+                        detail=(
+                            f"Stock insuficiente para '{prod.nombre}'; "
+                            f"disponible {prod.stock_actual}"
+                        )
                     )
-                producto.stock_actual -= d.cantidad
+                # descontar stock
+                prod.stock_actual -= d.cantidad
+                self.db.add(prod)
+
+                # recalcular subtotal de la línea con descuento individual
+                line_subtotal = (
+                    d.precio_unitario
+                    * d.cantidad
+                    * (1 - d.descuento_individual / 100)
+                )
 
                 detalle = DetalleVentaModel(
-                    venta_id        = venta.id,
-                    producto_id     = d.producto_id,
-                    cantidad        = d.cantidad,
-                    precio_unitario = d.precio_unitario,
-                    subtotal        = d.subtotal
+                    venta_id             = venta.id,
+                    producto_id          = d.producto_id,
+                    cantidad             = d.cantidad,
+                    precio_unitario      = d.precio_unitario,
+                    descuento_individual = d.descuento_individual,
+                    subtotal             = line_subtotal
                 )
                 self.db.add(detalle)
 
-            # 6) Commit y refresh
+            # 7) Commit y refrescar
             self.db.commit()
             self.db.refresh(venta)
             return Venta.model_validate(venta)
@@ -80,7 +116,10 @@ class VentaService:
             raise
         except SQLAlchemyError:
             self.db.rollback()
-            raise HTTPException(status_code=500, detail="Error interno al crear la venta")
+            raise HTTPException(
+                status_code=500,
+                detail="Error interno al crear la venta"
+            )
 
     def update(self, id: int, payload: VentaCreate) -> Venta | None:
         venta = (

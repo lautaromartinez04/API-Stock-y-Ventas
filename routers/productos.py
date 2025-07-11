@@ -1,12 +1,12 @@
 from fastapi import APIRouter, status, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from pathlib import Path
+
 from config.database import get_db
-from models.productos import Producto as ProductoModel
 from schemas.producto import Producto, ProductoCreate
 from services.productos import ProductoService
 from middlewares.jwt_bearer import JWTBearer
-from pathlib import Path
 
 productos_router = APIRouter()
 UPLOAD_DIR = Path("uploads")
@@ -30,7 +30,7 @@ def get_productos(db: Session = Depends(get_db)):
 def get_producto(id: int, db: Session = Depends(get_db)):
     prod = ProductoService(db).get(id)
     if not prod:
-        raise HTTPException(status_code=404, detail="No encontrado")
+        raise HTTPException(404, "Producto no encontrado")
     return prod
 
 @productos_router.post(
@@ -45,8 +45,11 @@ async def create_producto(
     codigo: str = Form(...),
     descripcion: str = Form(""),
     stock_actual: int = Form(0),
+    stock_bajo: int = Form(5),
+    precio_costo: float = Form(...),
+    margen: float = Form(25.0),
     precio_unitario: float = Form(...),
-    categoria_id: int = Form(1),
+    categoria_id: int = Form(None),
     activo: bool = Form(True),
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
@@ -55,24 +58,26 @@ async def create_producto(
     image_url = None
     if file:
         if file.content_type not in ("image/jpeg", "image/png"):
-            raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
-        filename = f"{codigo}_{Path(file.filename).name}"
-        filepath = UPLOAD_DIR / filename
-        with filepath.open("wb") as f:
+            raise HTTPException(400, "Solo JPEG o PNG")
+        name = f"{codigo}_{Path(file.filename).name}"
+        path = UPLOAD_DIR / name
+        with path.open("wb") as f:
             f.write(await file.read())
-        image_url = f"/uploads/{filename}"
+        image_url = f"/uploads/{name}"
 
-    nuevo = ProductoCreate(
+    payload = ProductoCreate(
         nombre=nombre,
         codigo=codigo,
         descripcion=descripcion,
         stock_actual=stock_actual,
+        stock_bajo=stock_bajo,
+        precio_costo=precio_costo,
         precio_unitario=precio_unitario,
         categoria_id=categoria_id,
         activo=activo,
         image_url=image_url,
     )
-    return service.create(nuevo)
+    return service.create(payload)
 
 @productos_router.put(
     "/productos/{id}",
@@ -86,6 +91,8 @@ async def update_producto(
     codigo: str = Form(None),
     descripcion: str = Form(None),
     stock_actual: int = Form(None),
+    stock_bajo: int = Form(None),
+    precio_costo: float = Form(None),
     precio_unitario: float = Form(None),
     categoria_id: int = Form(None),
     activo: bool = Form(None),
@@ -93,28 +100,30 @@ async def update_producto(
     db: Session = Depends(get_db),
 ):
     service = ProductoService(db)
-    prod = service.get(id)
-    if not prod:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    existing = service.get(id)
+    if not existing:
+        raise HTTPException(404, "Producto no encontrado")
 
-    update_data = prod.model_dump()
-    if nombre is not None: update_data['nombre'] = nombre
-    if codigo is not None: update_data['codigo'] = codigo
-    if descripcion is not None: update_data['descripcion'] = descripcion
-    if stock_actual is not None: update_data['stock_actual'] = stock_actual
-    if precio_unitario is not None: update_data['precio_unitario'] = precio_unitario
-    if categoria_id is not None: update_data['categoria_id'] = categoria_id
-    if activo is not None: update_data['activo'] = activo
+    data = existing.model_dump()
+    for fld, val in [
+        ("nombre", nombre), ("codigo", codigo), ("descripcion", descripcion),
+        ("stock_actual", stock_actual), ("stock_bajo", stock_bajo),
+        ("precio_costo", precio_costo), ("precio_unitario", precio_unitario),
+        ("categoria_id", categoria_id), ("activo", activo),
+    ]:
+        if val is not None:
+            data[fld] = val
 
-    updated = service.update(id, ProductoCreate(**update_data))
+    updated = service.update(id, ProductoCreate(**data))
+
     if file:
         if file.content_type not in ("image/jpeg", "image/png"):
-            raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
-        filename = f"{id}_{Path(file.filename).name}"
-        filepath = UPLOAD_DIR / filename
-        with filepath.open("wb") as f:
+            raise HTTPException(400, "Solo JPEG o PNG")
+        name = f"{id}_{Path(file.filename).name}"
+        path = UPLOAD_DIR / name
+        with path.open("wb") as f:
             f.write(await file.read())
-        image_url = f"/uploads/{filename}"
+        image_url = f"/uploads/{name}"
         updated = service.set_image(id, image_url)
 
     return updated
@@ -126,7 +135,7 @@ async def update_producto(
 )
 def delete_producto(id: int, db: Session = Depends(get_db)):
     ProductoService(db).delete(id)
-    return JSONResponse(status_code=200, content={"message": "Se ha eliminado el producto"})
+    return JSONResponse(status_code=200, content={"message": "Producto eliminado"})
 
 @productos_router.post(
     "/productos/{id}/imagen",
@@ -142,13 +151,13 @@ async def upload_image(
     service = ProductoService(db)
     prod = service.get(id)
     if not prod:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
+        raise HTTPException(404, "Producto no encontrado")
     if file.content_type not in ("image/jpeg", "image/png"):
-        raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
+        raise HTTPException(400, "Solo JPEG o PNG")
 
-    filename = f"{id}_{Path(file.filename).name}"
-    filepath = UPLOAD_DIR / filename
-    with filepath.open("wb") as f:
+    name = f"{id}_{Path(file.filename).name}"
+    path = UPLOAD_DIR / name
+    with path.open("wb") as f:
         f.write(await file.read())
-    image_url = f"/uploads/{filename}"
+    image_url = f"/uploads/{name}"
     return service.set_image(id, image_url)

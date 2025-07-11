@@ -15,6 +15,7 @@ from routers.ventas import ventas_router
 from routers.detalle_venta import detalle_ventas_router
 from routers.ws import ws_router
 from routers.devoluciones import devoluciones_router
+from routers.gastos import gastos_router
 
 app = FastAPI(
     title="API de Ventas y Stock",
@@ -49,6 +50,7 @@ app.include_router(ventas_router)
 app.include_router(detalle_ventas_router)
 app.include_router(ws_router)
 app.include_router(devoluciones_router)
+app.include_router(gastos_router)
 
 # Crear tablas si no existen
 Base.metadata.create_all(bind=engine)

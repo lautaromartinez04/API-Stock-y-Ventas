@@ -10,3 +10,4 @@ class DetalleVenta(Base):
     cantidad = Column(Integer, nullable=False)
     precio_unitario = Column(Float, nullable=False)
     subtotal = Column(Float, nullable=False)
+    descuento_individual = Column(Float, nullable=False)
