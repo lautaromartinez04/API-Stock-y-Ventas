@@ -1,7 +1,12 @@
+# src/routers/productos.py
+
 from fastapi import APIRouter, status, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pathlib import Path
+from io import BytesIO
+
+from openpyxl import load_workbook
 
 from config.database import get_db
 from schemas.producto import Producto, ProductoCreate
@@ -30,7 +35,7 @@ def get_productos(db: Session = Depends(get_db)):
 def get_producto(id: int, db: Session = Depends(get_db)):
     prod = ProductoService(db).get(id)
     if not prod:
-        raise HTTPException(404, "Producto no encontrado")
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
     return prod
 
 @productos_router.post(
@@ -58,7 +63,7 @@ async def create_producto(
     image_url = None
     if file:
         if file.content_type not in ("image/jpeg", "image/png"):
-            raise HTTPException(400, "Solo JPEG o PNG")
+            raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
         name = f"{codigo}_{Path(file.filename).name}"
         path = UPLOAD_DIR / name
         with path.open("wb") as f:
@@ -72,6 +77,7 @@ async def create_producto(
         stock_actual=stock_actual,
         stock_bajo=stock_bajo,
         precio_costo=precio_costo,
+        margen=margen,
         precio_unitario=precio_unitario,
         categoria_id=categoria_id,
         activo=activo,
@@ -93,6 +99,7 @@ async def update_producto(
     stock_actual: int = Form(None),
     stock_bajo: int = Form(None),
     precio_costo: float = Form(None),
+    margen: float = Form(None),
     precio_unitario: float = Form(None),
     categoria_id: int = Form(None),
     activo: bool = Form(None),
@@ -102,14 +109,15 @@ async def update_producto(
     service = ProductoService(db)
     existing = service.get(id)
     if not existing:
-        raise HTTPException(404, "Producto no encontrado")
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
 
     data = existing.model_dump()
     for fld, val in [
         ("nombre", nombre), ("codigo", codigo), ("descripcion", descripcion),
         ("stock_actual", stock_actual), ("stock_bajo", stock_bajo),
-        ("precio_costo", precio_costo), ("precio_unitario", precio_unitario),
-        ("categoria_id", categoria_id), ("activo", activo),
+        ("precio_costo", precio_costo), ("margen", margen),
+        ("precio_unitario", precio_unitario), ("categoria_id", categoria_id),
+        ("activo", activo),
     ]:
         if val is not None:
             data[fld] = val
@@ -118,7 +126,7 @@ async def update_producto(
 
     if file:
         if file.content_type not in ("image/jpeg", "image/png"):
-            raise HTTPException(400, "Solo JPEG o PNG")
+            raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
         name = f"{id}_{Path(file.filename).name}"
         path = UPLOAD_DIR / name
         with path.open("wb") as f:
@@ -151,9 +159,9 @@ async def upload_image(
     service = ProductoService(db)
     prod = service.get(id)
     if not prod:
-        raise HTTPException(404, "Producto no encontrado")
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
     if file.content_type not in ("image/jpeg", "image/png"):
-        raise HTTPException(400, "Solo JPEG o PNG")
+        raise HTTPException(status_code=400, detail="Solo JPEG o PNG")
 
     name = f"{id}_{Path(file.filename).name}"
     path = UPLOAD_DIR / name
@@ -161,3 +169,12 @@ async def upload_image(
         f.write(await file.read())
     image_url = f"/uploads/{name}"
     return service.set_image(id, image_url)
+
+@productos_router.post("/productos/importar-precios", tags=["Productos"], dependencies=[Depends(JWTBearer())])
+async def importar_precios(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    service = ProductoService(db)
+    updated, errors = service.bulk_update_prices_from_excel(await file.read())
+    return {"updated": updated, "errors": errors}

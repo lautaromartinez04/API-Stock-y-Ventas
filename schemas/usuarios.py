@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
-# Para el login
+# Para el login (solo entrada, no ORM)
 class User(BaseModel):
     username: str
     password: str
@@ -11,9 +11,9 @@ class UsuarioBase(BaseModel):
     username: str = Field(min_length=4, max_length=20)
     role: str = Field(min_length=4, max_length=20)
 
-    class Config:
-        from_attributes = True
-
-# Insertar o devolver usuario completo (incluye password y role)
+# Modelo que devuelve usuario completo (puede usarse también para creación)
 class Usuarios(UsuarioBase):
     password: str = Field(min_length=4)
+
+    # Este sí acepta instancias del ORM (SQLAlchemy)
+    model_config = ConfigDict(from_attributes=True)

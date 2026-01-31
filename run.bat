@@ -9,6 +9,7 @@ if errorlevel 1 (
 )
 
 echo Entorno virtual activado.
-uvicorn main:app --host 127.0.0.1 --port 8000
+echo Iniciando Uvicorn en todas las interfaces de red...
+uvicorn main:app --host 0.0.0.0 --port 8000
 echo Proceso finalizado.
 pause

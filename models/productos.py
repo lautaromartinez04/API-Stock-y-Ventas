@@ -15,7 +15,7 @@ class Producto(Base):
 
     # Costo, margen y precio de venta
     precio_costo    = Column(Float, default=0.0, nullable=False)    # Precio de costo
-    margen          = Column(Float, default=25.0, nullable=False)   # Margen deseado (%)  
+    margen          = Column(Float, default=25.0, nullable=False)   # Margen deseado (%)
     precio_unitario = Column(Float, nullable=False)                 # Precio de venta
 
     categoria_id    = Column(Integer, ForeignKey("categorias.id"), nullable=True)

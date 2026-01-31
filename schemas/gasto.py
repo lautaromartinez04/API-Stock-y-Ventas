@@ -1,6 +1,4 @@
-# schemas/gasto.py
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
 class GastoBase(BaseModel):
@@ -18,5 +16,5 @@ class Gasto(GastoBase):
     id: int
     fecha: datetime
 
-    class Config:
-        from_attributes = True
+    # Permite validar instancias de SQLAlchemy directamente
+    model_config = ConfigDict(from_attributes=True)

@@ -58,3 +58,7 @@ Base.metadata.create_all(bind=engine)
 @app.get("/", tags=["home"])
 def message():
     return HTMLResponse("<h1>API de Control de Ventas, Stock y Devoluciones</h1>")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}

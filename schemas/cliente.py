@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 class ClienteBase(BaseModel):
@@ -13,5 +13,5 @@ class ClienteCreate(ClienteBase):
 class Cliente(ClienteBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    # Permite aceptar instancias de SQLAlchemy al devolver datos
+    model_config = ConfigDict(from_attributes=True)

@@ -1,8 +1,11 @@
+# src/routers/ventas.py
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from fastapi import Body
 from config.database import get_db
-from schemas.venta import Venta, VentaCreate
+from schemas.venta import Venta, VentaCreate, VentaPatch
 from services.ventas import VentaService
 from middlewares.jwt_bearer import JWTBearer
 from utils.connection_manager import manager
@@ -56,6 +59,8 @@ def create_venta(
                 "descuento": result.descuento,
                 "total": result.total,
                 "cliente_id": result.cliente_id,
+                "forma_pago": result.forma_pago,
+                "pagado": result.pagado,
                 "detalles": [d.dict() for d in venta.detalles]
             },
             "ventas"
@@ -127,3 +132,20 @@ def confirmar_venta(id: int, db: Session = Depends(get_db)):
 )
 def cancelar_venta(id: int, db: Session = Depends(get_db)):
     return VentaService(db).cancelar_venta(id)
+
+@ventas_router.patch(
+    "/ventas/{id}/pagado",
+    response_model=Venta,
+    status_code=status.HTTP_200_OK,
+    tags=["Ventas"],
+    dependencies=[Depends(JWTBearer())]
+)
+def patch_venta_pagado(
+    id: int,
+    payload: VentaPatch,
+    db: Session = Depends(get_db)
+):
+    try:
+        return VentaService(db).mark_pagado(id, payload.pagado)
+    except HTTPException:
+        raise

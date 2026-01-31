@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
+# src/models/venta.py
+
+from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, String, Boolean
 from sqlalchemy.sql import func
 from config.database import Base
 
@@ -12,3 +14,5 @@ class Venta(Base):
     total                = Column(Float, nullable=False)     # neto tras aplicar descuento
     cliente_id           = Column(Integer, ForeignKey("clientes.id"), nullable=True)
     usuario_id           = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    forma_pago           = Column(String(20), nullable=False, default="efectivo")
+    pagado               = Column(Boolean, nullable=False, default=False)

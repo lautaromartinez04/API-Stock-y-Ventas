@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class DetalleVentaBase(BaseModel):
     venta_id: int
@@ -7,6 +7,7 @@ class DetalleVentaBase(BaseModel):
     precio_unitario: float
     subtotal: float
     descuento_individual: float
+    costo_unitario: float | None = 0
 
 class DetalleVentaCreate(DetalleVentaBase):
     pass
@@ -14,5 +15,5 @@ class DetalleVentaCreate(DetalleVentaBase):
 class DetalleVenta(DetalleVentaBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    # Permite aceptar instancias del ORM (SQLAlchemy)
+    model_config = ConfigDict(from_attributes=True)

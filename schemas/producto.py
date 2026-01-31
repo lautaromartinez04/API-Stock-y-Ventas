@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 
 class ProductoBase(BaseModel):
@@ -33,5 +33,5 @@ class ProductoCreate(ProductoBase):
 class Producto(ProductoBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    # Permite aceptar instancias de SQLAlchemy directamente
+    model_config = ConfigDict(from_attributes=True)

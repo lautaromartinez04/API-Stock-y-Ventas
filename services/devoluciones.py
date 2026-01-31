@@ -41,7 +41,11 @@ def create_devolucion(db: Session, data: DevolucionCreate) -> devol_models.Devol
             )
 
     # 3) Crear cabecera
-    nueva_dev = devol_models.Devolucion(venta_id=data.venta_id)
+    nueva_dev = devol_models.Devolucion(
+        venta_id=data.venta_id,
+        reponer_stock=data.reponer_stock,
+        detalle=data.detalle
+    )
     db.add(nueva_dev)
     db.flush()
 
@@ -74,14 +78,15 @@ def create_devolucion(db: Session, data: DevolucionCreate) -> devol_models.Devol
         )
         db.add(detalle)
 
-        # 4.3) Ajustar stock
-        producto = db.query(productos_models.Producto).filter(
-            productos_models.Producto.id == item.producto_id
-        ).first()
-        if not producto:
-            raise ValueError(f"Producto {item.producto_id} no encontrado")
-        producto.stock_actual = (producto.stock_actual or 0) + item.cantidad
-        db.add(producto)
+        # 4.3) Ajustar stock (solo si reponer_stock es True)
+        if data.reponer_stock:
+            producto = db.query(productos_models.Producto).filter(
+                productos_models.Producto.id == item.producto_id
+            ).first()
+            if not producto:
+                raise ValueError(f"Producto {item.producto_id} no encontrado")
+            producto.stock_actual = (producto.stock_actual or 0) + item.cantidad
+            db.add(producto)
 
     # 5) Guardar todo
     db.commit()
@@ -101,15 +106,25 @@ def update_devolucion(db: Session, devolucion_id: int, data: DevolucionCreate) -
         raise ValueError("Devolución no encontrada")
 
     # 1) Revertir stock y borrar detalles previos
+    # Solo revertimos (restamos lo devuelto) si la devolución anterior había repuesto stock.
+    if devol.reponer_stock:
+        for detalle in devol.detalles:
+            prod = db.query(productos_models.Producto).filter(
+                productos_models.Producto.id == detalle.producto_id
+            ).first()
+            if prod:
+                prod.stock_actual = (prod.stock_actual or 0) - detalle.cantidad
+                db.add(prod)
+    
+    # Borrar detalles viejos
     for detalle in devol.detalles:
-        prod = db.query(productos_models.Producto).filter(
-            productos_models.Producto.id == detalle.producto_id
-        ).first()
-        if prod:
-            prod.stock_actual = (prod.stock_actual or 0) - detalle.cantidad
-            db.add(prod)
         db.delete(detalle)
     db.flush()
+
+    # Actualizamos el flag en la cabecera
+    devol.reponer_stock = data.reponer_stock
+    devol.detalle = data.detalle
+    db.add(devol)
 
     # 2) Validar nuevo límite de devolución
     for item in data.items:
@@ -157,11 +172,14 @@ def update_devolucion(db: Session, devolucion_id: int, data: DevolucionCreate) -
         )
         db.add(nuevo_detalle)
 
-        prod = db.query(productos_models.Producto).filter(
-            productos_models.Producto.id == item.producto_id
-        ).first()
-        prod.stock_actual = (prod.stock_actual or 0) + item.cantidad
-        db.add(prod)
+        db.add(nuevo_detalle)
+
+        if data.reponer_stock:
+            prod = db.query(productos_models.Producto).filter(
+                productos_models.Producto.id == item.producto_id
+            ).first()
+            prod.stock_actual = (prod.stock_actual or 0) + item.cantidad
+            db.add(prod)
 
     db.commit()
     db.refresh(devol)
@@ -171,7 +189,7 @@ def get_all_devoluciones(db: Session) -> list[devol_models.Devolucion]:
     """
     Devuelve todas las devoluciones registradas.
     """
-    return db.query(devol_models.Devolucion).all()
+    return db.query(devol_models.Devolucion).order_by(devol_models.Devolucion.fecha.desc(), devol_models.Devolucion.id.desc()).all()
 
 
 def get_devolucion_by_id(db: Session, devolucion_id: int) -> devol_models.Devolucion | None:
@@ -192,14 +210,15 @@ def delete_devolucion(db: Session, devolucion_id: int) -> None:
     if not devol:
         raise ValueError("Devolución no encontrada")
 
-    # Revertir stock_actual y eliminar detalles
-    for detalle in devol.detalles:
-        producto = db.query(productos_models.Producto).filter(
-            productos_models.Producto.id == detalle.producto_id
-        ).first()
-        if producto:
-            producto.stock_actual = (producto.stock_actual or 0) - detalle.cantidad
-            db.add(producto)
+    # Revertir stock_actual (si aplicaba) y eliminar detalles
+    if devol.reponer_stock:
+        for detalle in devol.detalles:
+            producto = db.query(productos_models.Producto).filter(
+                productos_models.Producto.id == detalle.producto_id
+            ).first()
+            if producto:
+                producto.stock_actual = (producto.stock_actual or 0) - detalle.cantidad
+                db.add(producto)
 
     db.query(devol_models.DetalleDevolucion).filter(
         devol_models.DetalleDevolucion.devolucion_id == devolucion_id

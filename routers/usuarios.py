@@ -1,5 +1,4 @@
 # routers/usuarios.py
-
 from fastapi import APIRouter, Depends, Path, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -105,15 +104,49 @@ def create_usuarios(
 )
 def update_usuarios(
     id: int = Path(..., gt=0),
-    usuario_in: Usuarios = Depends(),
+    username: Optional[str] = None,
+    role: Optional[str] = None,
+    password: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     existing = UsuariosService(db).get_usuario(id)
     if not existing:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    usuario_in.password = pwd_context.hash(usuario_in.password)
-    return UsuariosService(db).update_usuarios(id, usuario_in)
 
+    # helpers para leer campos de SQLAlchemy model o dict/Pydantic
+    def get_field(obj, name, default=None):
+        if isinstance(obj, dict):
+            return obj.get(name, default)
+        return getattr(obj, name, default)
+
+    def nz(v: Optional[str]) -> Optional[str]:
+        # normaliza vacío ("") como no-proporcionado
+        return v if (v is not None and v != "") else None
+
+    # valores actuales
+    curr_id = get_field(existing, "id", id)
+    curr_username = get_field(existing, "username")
+    curr_role = get_field(existing, "role")
+    curr_password_hash = get_field(existing, "password")
+
+    # aplicar solo lo enviado
+    new_username = nz(username) or curr_username
+    new_role     = nz(role) or curr_role
+
+    if nz(password) is not None:
+        new_password_hash = pwd_context.hash(password)  # cambiar password
+    else:
+        new_password_hash = curr_password_hash          # conservar password
+
+    # construir schema Pydantic para el service
+    usuario_in = Usuarios(
+        id=curr_id,
+        username=new_username,
+        role=new_role,
+        password=new_password_hash,
+    )
+
+    return UsuariosService(db).update_usuarios(id, usuario_in)
 
 @usuarios_router.delete(
     "/usuarios/{id}",
